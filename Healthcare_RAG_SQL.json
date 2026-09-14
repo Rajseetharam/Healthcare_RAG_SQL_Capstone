@@ -1,0 +1,1402 @@
+{
+  "name": "Healthcare_RAG_SQL",
+  "nodes": [
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        -1024,
+        -496
+      ],
+      "id": "90642c87-ba5d-422a-b73d-e747ac311ca3",
+      "name": "When chat message received",
+      "webhookId": "cbee3abc-51ec-4697-ab56-91bd27ea85d6"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "7b0f3d53-8f04-4856-922c-76e7971838c8",
+              "leftValue": "={{ Number($json.session_count) }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -576,
+        -496
+      ],
+      "id": "b918f180-11f5-47c4-b332-7f72b6e2ac19",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n    COUNT(*) AS session_count\nFROM user_sessions\nWHERE session_id = '{{ $json.sessionId }}';",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -800,
+        -496
+      ],
+      "id": "55fda426-eaee-4945-8506-48f89a5d6fdf",
+      "name": "sessions_lookup",
+      "credentials": {
+        "postgres": {
+          "id": "iUKmju52LgeNEZJa",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.chatInput }}",
+        "options": {
+          "systemMessage": "You are an Authentication Agent for a Healthcare Equipment Customer Support System.\n\nYour only responsibility is to authenticate customers.\n\nThe USERS table contains:\n\n* USER_ID\n* CLIENT_ID\n* CUSTOMER_NAME\n* EMAIL\n* COMPANY_NAME\n\nAuthentication requires BOTH:\n\n* CLIENT_ID\n* EMAIL\n\nRules:\n\n1. If the user has not provided CLIENT_ID, ask for it.\n2. If the user has not provided EMAIL, ask for it.\n3. If both are available, validate them against the USERS table.\n4. Generate a PostgreSQL query to check whether a matching record exists.\n5. Never authenticate using only CLIENT_ID.\n6. Never authenticate using only EMAIL.\n7. Never expose customer data.\n\nWhen validation succeeds return ONLY:\n\n{\n\"authentication_status\": \"true\",\n\"client_id\": \"<client_id>\",\n\"email\": \"<email>\"\n}\n\nWhen validation fails return ONLY:\n\n{\n\"authentication_status\": \"false\",\n\"message\": \"Invalid Client ID or Email\"\n}\n\nWhen information is missing, ask the user for the missing details.\n"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        -128,
+        -256
+      ],
+      "id": "8a1d5e40-4ca5-4ee5-a788-78b774955a29",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-5-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        -128,
+        -32
+      ],
+      "id": "013059ac-59e5-452b-bc44-f4186346fba1",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "LbJrE9hYiZxaFGU1",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $fromAI('sql_statement') }}",
+        "options": {}
+      },
+      "id": "960bb0d0-c580-47c8-98c1-bdec9b3b2055",
+      "name": "Postgres",
+      "type": "n8n-nodes-base.postgresTool",
+      "position": [
+        0,
+        -32
+      ],
+      "typeVersion": 2.5,
+      "description": "Use this tool to run SELECT queries against the PostgreSQL database. Only query the 'products' table. The table has the following columns:\n- id (SERIAL, primary key)\n- name (VARCHAR) — product name\n- price (NUMERIC) — price in USD\n- stock (INTEGER) — units available\n- category (VARCHAR) — product category (Electronics, Accessories, Office)\n- created_at (TIMESTAMP) — when the record was added\n\nOnly use SELECT statements. Never run INSERT, UPDATE, DELETE, or DROP.",
+      "credentials": {
+        "postgres": {
+          "id": "iUKmju52LgeNEZJa",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"chatInput\": \"{{ $('When chat message received').item.json.chatInput }}\",\n  \"sessionId\": \"{{ $('When chat message received').item.json.sessionId }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -352,
+        -256
+      ],
+      "id": "d1ab75be-324d-4dde-af0d-82368fa83ec2",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "jsCode": "let output = $json.output;\n\n\ntry {\n   const parsed = JSON.parse(output);\n\n  return [{\n    json: {\n      authentication_status: parsed.authentication_status,\n      client_id: parsed.client_id || '',\n      email: parsed.email || '',\n      session_id: $('When chat message received').first().json.sessionId,\n      is_authenticated: parsed.authentication_status === \"true\"\n    }\n  }];\n\n} catch (error) {\n \n  return [{\n    json: {\n      is_authenticated: false,\n      message: output,\n      session_id: $('When chat message received').first().json.sessionId\n    }\n  }];\n\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        288,
+        -256
+      ],
+      "id": "3d455d97-f740-48d4-af86-99d0002045f4",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "24a6eb0a-f7b8-4545-a432-ac4865e79799",
+              "leftValue": "={{ $json.authentication_status }}",
+              "rightValue": "=true",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        560,
+        -176
+      ],
+      "id": "f9948ba9-67ef-432b-9434-956279f05a8b",
+      "name": "If1"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO user_sessions\n(\n    session_id,\n    client_id,\n    email,\n    authenticated,\n    last_activity\n)\nVALUES\n(\n    '{{ $('Code in JavaScript').item.json.session_id }}',\n    '{{ $('Code in JavaScript').item.json.client_id }}',\n    '{{ $('Code in JavaScript').item.json.email }}',\n    TRUE,\n    NOW()\n)\nON CONFLICT (session_id)\nDO UPDATE SET\nclient_id = EXCLUDED.client_id,\nemail = EXCLUDED.email,\nauthenticated = TRUE,\nlast_activity = NOW();",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        800,
+        -256
+      ],
+      "id": "5256ce78-ba8b-4cd3-86b8-eb2dd490ea5f",
+      "name": "Insert_Session",
+      "credentials": {
+        "postgres": {
+          "id": "iUKmju52LgeNEZJa",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n    session_id,\n    client_id,\n    email,\n    authenticated\nFROM user_sessions\nWHERE session_id='{{ $('When chat message received').item.json.sessionId }}';",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -352,
+        -688
+      ],
+      "id": "3a5dfde9-07c7-4288-bf85-f20bdb54eaa7",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "iUKmju52LgeNEZJa",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"chatInput\": \"{{ $('When chat message received').item.json.chatInput }}\",\n  \"client_id\": \"{{ $json.client_id }}\",\n  \"email\": \"{{ $json.email }}\",\n  \"session_id\": \"{{ $json.session_id }}\"\n} ",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -64,
+        -688
+      ],
+      "id": "419abe3e-1237-4b9f-9cf8-4cab6736afb3",
+      "name": "Edit Fields1"
+    },
+    {
+      "parameters": {
+        "options": {
+          "systemMessage": "You are a routing agent.\n\nDetermine whether the user's request should be answered using:\n\nSQL\nRAG\nCOMPLAINT\nNONE\n\nReturn ONLY JSON.\n\nExamples:\n\nWhat is my order status?\n\n{\n \"route\":\"SQL\"\n}\n\nWhat is my invoice amount?\n\n{\n \"route\":\"SQL\"\n}\n\nShow MRI manual\n\n{\n \"route\":\"RAG\"\n}\n\nWhat is AMC policy?\n\n{\n \"route\":\"RAG\"\n}\n\nWeather today?\n\n{\n \"route\":\"NONE\"\n}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        224,
+        -688
+      ],
+      "id": "90d4225c-b098-4699-9d0b-aa69e9f0b1b8",
+      "name": "AI Agent1"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-5-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        224,
+        -464
+      ],
+      "id": "314067c8-40c9-4638-9a19-e3c193a8652a",
+      "name": "OpenAI Chat Model1",
+      "credentials": {
+        "openAiApi": {
+          "id": "LbJrE9hYiZxaFGU1",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const parsed = JSON.parse($json.output);\n\nreturn [{\n  json: {\n    route: parsed.route,\n    client_id:$('Edit Fields1').first().json.client_id,\n    email: $('Edit Fields1').first().json.email,\n    chatInput: $('Edit Fields1').first().json.chatInput,\n    session_id: $('Edit Fields1').first().json.session_id\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        576,
+        -688
+      ],
+      "id": "1398f460-09aa-4db4-84a0-a0c1d644c16d",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "SQL",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "a8c1de81-8123-4031-aa91-acf605000114"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "cb113afa-0b09-466a-95cd-50113e43b709",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "RAG",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "26414013-086d-4e1b-8b6e-76325dddfa97",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "COMPLAINT",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        720,
+        -960
+      ],
+      "id": "f852b13a-acdb-4b22-b436-371ed88f2720",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "options": {
+          "systemMessage": "=You are a Healthcare Equipment Customer Support SQL Agent.\n\nThe customer has already been authenticated.\n\nAuthenticated Customer Details:\n\nCLIENT_ID = {{ $json.client_id }}\n\nEMAIL = {{ $json.email }}\n\nYour responsibility is to answer customer-specific questions by retrieving information from the PostgreSQL database.\n\nIMPORTANT SECURITY RULES\n\n1. The customer is already authenticated.\n2. Always use the authenticated CLIENT_ID when querying customer data.\n3. Never ask the user for Client ID or Email again.\n4. Never expose information belonging to another customer.\n5. Never modify data.\n6. Only perform SELECT queries.\n7. Never generate INSERT, UPDATE, DELETE, DROP, ALTER, CREATE, or TRUNCATE statements.\n8. Never return SQL statements to the user.\n9. Return clear business-friendly responses.\n\nIMPORTANT OUTPUT RULES\n\nNever explain your reasoning.\n\nNever describe tool usage.\n\nNever mention SQL queries.\n\nNever mention database tables.\n\nNever mention retrieved records.\n\nNever say:\n- \"I should\"\n- \"I will\"\n- \"I found\"\n- \"Using the SQL tool\"\n- \"Based on the SQL call\"\n- \"Noted\"\n\nReturn ONLY the final customer-facing answer.\n\nDo not expose chain of thought.\n==================================================\nDATABASE SCHEMA\n===============\n\nTABLE: USERS\n\nPurpose:\nStores customer master information.\n\nColumns:\n\n* USER_ID\n* CLIENT_ID\n* CUSTOMER_NAME\n* EMAIL\n* COMPANY_NAME\n\n---\n\nTABLE: ORDERS\n\nPurpose:\nStores customer orders.\n\nColumns:\n\n* ORDER_ID\n* CLIENT_ID\n* EQUIPMENT_ID\n* ORDER_STATUS\n* DELIVERY_DATE\n* TRACKING_NUMBER\n\n---\n\nTABLE: EQUIPMENT\n\nPurpose:\nStores equipment details.\n\nColumns:\n\n* EQUIPMENT_ID\n* EQUIPMENT_NAME\n* MODEL_NUMBER\n* SERIAL_NUMBER\n* INSTALLATION_DATE\n\n---\n\nTABLE: WARRANTY\n\nPurpose:\nStores warranty and AMC information.\n\nColumns:\n\n* WARRANTY_ID\n* EQUIPMENT_ID\n* CLIENT_ID\n* START_DATE\n* END_DATE\n* AMC_STATUS\n\n---\n\nTABLE: COMPLAINTS\n\nPurpose:\nStores customer complaints.\n\nColumns:\n\n* TICKET_ID\n* CLIENT_ID\n* ISSUE_DESCRIPTION\n* STATUS\n* CREATED_AT\n\n---\n\nTABLE: INVOICES\n\nPurpose:\nStores invoice information.\n\nColumns:\n\n* INVOICE_ID\n* CLIENT_ID\n* AMOUNT\n* INVOICE_DATE\n* INVOICE_LINK\n\n==================================================\nRELATIONSHIPS\n=============\n\nORDERS.CLIENT_ID = USERS.CLIENT_ID\n\nWARRANTY.CLIENT_ID = USERS.CLIENT_ID\n\nCOMPLAINTS.CLIENT_ID = USERS.CLIENT_ID\n\nINVOICES.CLIENT_ID = USERS.CLIENT_ID\n\nORDERS.EQUIPMENT_ID = EQUIPMENT.EQUIPMENT_ID\n\nWARRANTY.EQUIPMENT_ID = EQUIPMENT.EQUIPMENT_ID\n\n==================================================\nSUPPORTED CUSTOMER QUESTIONS\n============================\n\nORDER STATUS\n\nExamples:\n\n* What is my order status?\n* Has my order shipped?\n* When will my order be delivered?\n* Give me the tracking number.\n\nUse:\nORDERS\nJOIN EQUIPMENT when equipment details are required.\n\n---\n\nWARRANTY / AMC\n\nExamples:\n\n* Is my equipment under warranty?\n* When does my warranty expire?\n* What is my AMC status?\n\nUse:\nWARRANTY\nJOIN EQUIPMENT\n\n---\n\nCOMPLAINTS\n\nExamples:\n\n* What is the status of my complaint?\n* Show my open tickets.\n* Has ticket 123 been resolved?\n\nUse:\nCOMPLAINTS\n\n---\n\nINVOICES\n\nExamples:\n\n* Show my invoices.\n* What is my invoice amount?\n* Give me my invoice link.\n\nUse:\nINVOICES\n\n---\n\nCUSTOMER PROFILE\n\nExamples:\n\n* What company am I registered under?\n* Show my customer details.\n\nUse:\nUSERS\n\n==================================================\nQUERY RULES\n===========\n\nFor every customer-specific query always filter using:\n\nCLIENT_ID = '{{ $json.client_id }}'\n\nNever retrieve records belonging to any other client.\n\nUse JOINs whenever equipment information is required.\n\n==================================================\nRESPONSE STYLE\n==============\n\nProvide concise customer-friendly answers.\n\nGood Example:\n\nYour order #1025 is currently In Transit.\nExpected delivery date: 15-Jun-2026.\nTracking Number: TRK-998712.\n\nGood Example:\n\nYour MRI Scanner Model MRI-X200 is covered under warranty until 31-Dec-2027.\nAMC Status: Active.\n\nDo not mention database tables.\nDo not mention SQL queries.\nDo not mention internal system details.\n\nUse the PostgreSQL tool whenever information is required.\n"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        1792,
+        -336
+      ],
+      "id": "ca0a33d1-27b1-4608-a5f0-960d6e6cec76",
+      "name": "SQL Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-5-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        2128,
+        -176
+      ],
+      "id": "99117d90-f360-4212-a60f-398275b4ee3a",
+      "name": "OpenAI Chat Model2",
+      "credentials": {
+        "openAiApi": {
+          "id": "LbJrE9hYiZxaFGU1",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Use this tool to execute PostgreSQL SELECT queries.\n\nAvailable tables:\n\nUSERS\n- USER_ID\n- CLIENT_ID\n- CUSTOMER_NAME\n- EMAIL\n- COMPANY_NAME\n\nORDERS\n- ORDER_ID\n- CLIENT_ID\n- EQUIPMENT_ID\n- ORDER_STATUS\n- DELIVERY_DATE\n- TRACKING_NUMBER\n\nEQUIPMENT\n- EQUIPMENT_ID\n- EQUIPMENT_NAME\n- MODEL_NUMBER\n- SERIAL_NUMBER\n- INSTALLATION_DATE\n\nWARRANTY\n- WARRANTY_ID\n- EQUIPMENT_ID\n- CLIENT_ID\n- START_DATE\n- END_DATE\n- AMC_STATUS\n\nCOMPLAINTS\n- TICKET_ID\n- CLIENT_ID\n- ISSUE_DESCRIPTION\n- STATUS\n- CREATED_AT\n\nINVOICES\n- INVOICE_ID\n- CLIENT_ID\n- AMOUNT\n- INVOICE_DATE\n- INVOICE_LINK\n\nOnly execute SELECT statements.\n\nNever execute:\nINSERT\nUPDATE\nDELETE\nDROP\nALTER\nTRUNCATE\nCREATE",
+        "operation": "executeQuery",
+        "query": "{{ $fromAI('sql_statement') }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        2384,
+        -176
+      ],
+      "id": "2fa1c696-d625-439b-9085-589ee3c0046d",
+      "name": "Execute a SQL query in Postgres",
+      "credentials": {
+        "postgres": {
+          "id": "iUKmju52LgeNEZJa",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        352,
+        -464
+      ],
+      "id": "32578209-b1fc-43c1-aa42-6421163ed42a",
+      "name": "Simple Memory"
+    },
+    {
+      "parameters": {},
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        2256,
+        -176
+      ],
+      "id": "58e3600f-efab-4ea4-817e-9e00d0a642d0",
+      "name": "Simple Memory1"
+    },
+    {
+      "parameters": {
+        "options": {
+          "systemMessage": "You are a Healthcare Equipment Knowledge Assistant.\n\nThe customer is already authenticated.\n\nAnswer questions using information retrieved from the knowledge base.\n\nKnowledge Base contains:\n\n- MRI manuals\n- CT scanner manuals\n- Installation guides\n- Troubleshooting guides\n- AMC policies\n- Warranty policies\n- Product documentation\n\nRules:\n\n1. Use the Vector Store tool whenever information is needed.\n2. Do not make up information.\n3. If no information is found, say:\n   \"I could not find relevant information in the knowledge base.\"\n4. Provide concise and professional answers.\n5. Summarize retrieved content clearly.\n6. Never ask for Client ID or Email."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        2096,
+        -1600
+      ],
+      "id": "83667059-4128-4a3e-8a18-b2517cf94cd5",
+      "name": "AI Agent2"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-5-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        2048,
+        -1376
+      ],
+      "id": "d70474ff-9563-45b3-a381-ca8383b223de",
+      "name": "OpenAI Chat Model3",
+      "credentials": {
+        "openAiApi": {
+          "id": "LbJrE9hYiZxaFGU1",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        2176,
+        -1376
+      ],
+      "id": "cbced2eb-5120-40f3-8266-729982e214ae",
+      "name": "Simple Memory2"
+    },
+    {
+      "parameters": {
+        "description": "Return Documents related to match"
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolVectorStore",
+      "typeVersion": 1.1,
+      "position": [
+        2304,
+        -1376
+      ],
+      "id": "9557e027-af47-4a62-af7b-e5097b138de2",
+      "name": "Answer questions with a vector store"
+    },
+    {
+      "parameters": {
+        "pineconeIndex": {
+          "__rl": true,
+          "value": "healthcare-rag",
+          "mode": "list",
+          "cachedResultName": "healthcare-rag"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStorePinecone",
+      "typeVersion": 1.3,
+      "position": [
+        2192,
+        -1168
+      ],
+      "id": "4983af58-ca2e-492b-a907-6b2183618515",
+      "name": "Pinecone Vector Store",
+      "credentials": {
+        "pineconeApi": {
+          "id": "X0SRLAbmxnh2zSmh",
+          "name": "Pinecone account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "text-embedding-3-large",
+        "options": {
+          "dimensions": 1024
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        2272,
+        -960
+      ],
+      "id": "658a011f-e59e-45fc-b76c-d42c1ab1e7b9",
+      "name": "Embeddings OpenAI",
+      "credentials": {
+        "openAiApi": {
+          "id": "LbJrE9hYiZxaFGU1",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-5-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        2480,
+        -1168
+      ],
+      "id": "f3ba2c63-625d-467a-811c-85bc87f56fbf",
+      "name": "OpenAI Chat Model4",
+      "credentials": {
+        "openAiApi": {
+          "id": "LbJrE9hYiZxaFGU1",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "{\n  \"output\": \"Authentication successful.\\n\\nYou can ask me about:\\n• Order status\\n• Invoices\\n• Warranty information\\n• AMC policies\\n• Equipment manuals\\n• Troubleshooting guides\\n\\nHow can I assist you today?\"\n}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1088,
+        -256
+      ],
+      "id": "e30425c7-77ee-4bba-9ad8-e4e5e20c7fdd",
+      "name": "Respond_After_Authentication"
+    },
+    {
+      "parameters": {
+        "options": {
+          "systemMessage": "=You are a Complaint Registration Agent.\n\nThe customer is already authenticated.\n\nCLIENT_ID = {{ $('Code in JavaScript1').item.json.client_id }}\n\nYour goal is to collect:\n\n1. Equipment Type\n2. Issue Description\n3. Impact on Operations\n\nRules:\n\n- If information is missing, ask ONLY for the missing information.\n- Do not register a complaint until all required information is available.\n- Once all information is collected, return ONLY JSON.\n\nExample 1:\n\nUser:\n\"My MRI machine is not working\"\n\nResponse:\n\"Which equipment is affected and what issue are you experiencing?\"\n\nExample 2:\n\nUser:\n\"The MRI machine is not powering on\"\n\nResponse:\n\"Is patient service currently impacted by this issue?\"\n\nExample 3:\n\nOnce all information is collected:\n\n{\n  \"register_complaint\": true,\n  \"equipment_type\": \"MRI\",\n  \"issue_description\": \"Machine not powering on\",\n  \"impact\": \"Patient services impacted\"\n}\n"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        1024,
+        -736
+      ],
+      "id": "c3a32438-661c-4dfa-a61a-0422352bd452",
+      "name": "Complaint_Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-5-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        1024,
+        -512
+      ],
+      "id": "920325bd-2f47-4be8-a2c2-cfc0a6d0b840",
+      "name": "OpenAI Chat Model5",
+      "credentials": {
+        "openAiApi": {
+          "id": "LbJrE9hYiZxaFGU1",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        1152,
+        -512
+      ],
+      "id": "b62324c2-fb55-4fb2-a3c0-577ec799df96",
+      "name": "Simple Memory3"
+    },
+    {
+      "parameters": {
+        "jsCode": "let output = $json.output;\n\ntry {\n\n  const parsed = JSON.parse(output);\n\n  return [{\n    json: {\n      isComplaintReady: true,\n      client_id: $('Code in JavaScript1').first().json.client_id,\n      equipment_type: parsed.equipment_type,\n      issue_description: parsed.issue_description,\n      impact: parsed.impact\n    }\n  }];\n\n} catch (error) {\n\n  return [{\n    json: {\n      isComplaintReady: false,\n      followupQuestion: output\n    }\n  }];\n\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1376,
+        -736
+      ],
+      "id": "4a181361-8a57-4116-9110-2fdfc395e822",
+      "name": "Parse_Compliant_JSON"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO complaints\n(\n    client_id,\n    issue_description,\n    status,\n    created_at\n)\nVALUES\n(\n    '{{ $json.client_id }}',\n    'Equipment: {{ $json.equipment_type }} | Severity: {{ $json.severity }} | Issue: {{ $json.issue_description }}',\n    'OPEN',\n    NOW()\n)\n  RETURNING\n    ticket_id,\n    client_id,\n    status,\n    created_at;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1824,
+        -784
+      ],
+      "id": "cc591285-abce-4a02-b587-cae150b0992a",
+      "name": "Execute a SQL query1",
+      "credentials": {
+        "postgres": {
+          "id": "iUKmju52LgeNEZJa",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "2fa7b74a-ff30-4316-948e-32cac45cf806",
+              "leftValue": "={{ $json.isComplaintReady }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1600,
+        -736
+      ],
+      "id": "8104ed60-838c-4470-ba40-c0214203248e",
+      "name": "If2"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"output\": \"{{ $json.followupQuestion }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1824,
+        -592
+      ],
+      "id": "c6028de1-6a8a-4b86-b100-fb44eb27686d",
+      "name": "Complaint_Followup_Question"
+    },
+    {
+      "parameters": {
+        "numberInputs": 3
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        3168,
+        -736
+      ],
+      "id": "ee2138bb-08ae-4c65-94fb-a1fd7fbe4b07",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"output\": \"{{ $json.output }}\",\n  \"intent\": \"RAG\",\n  \"data_source\": \"Pinecone\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2448,
+        -1584
+      ],
+      "id": "57b79afc-029a-48e5-91a7-0aa6e5c765bb",
+      "name": "log_RAG"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"output\": \"Your complaint has been registered successfully.\\n\\nTicket ID: {{ $json.ticket_id }}\\nStatus: {{ $json.status }}\\nCreated On: {{ $json.created_at }}\\n\\nOur support team has been notified and will contact you shortly.\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2256,
+        -784
+      ],
+      "id": "025e22fc-5e8f-4e62-af9f-e25db8893c4d",
+      "name": "Respond_To_User"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"output\": \"{{ $json.output }}\",\n  \"intent\": \"COMPLAINT\",\n  \"data_source\": \"PostgreSQL\"\n}\n ",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2464,
+        -784
+      ],
+      "id": "64d41fe3-8841-4ffd-bfba-fe12435903f3",
+      "name": "log_COMPLAINT"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"output\": {{ $json.output }},\n  \"intent\": \"SQL\",\n  \"data_source\": \"PostgreSQL\"\n} ",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2544,
+        -400
+      ],
+      "id": "bcdbeaf5-ede0-47b2-8724-b190304ec63d",
+      "name": "log_SQL"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO conversation_logs\n(\n session_id,\n client_id,\n user_message,\n bot_response,\n intent,\n data_source,\n created_at\n)\nVALUES\n(\n '{{ $(\"When chat message received\").item.json.sessionId }}',\n '{{ $(\"Code in JavaScript1\").item.json.client_id }}',\n '{{ $(\"When chat message received\").item.json.chatInput }}',\n '{{ $json.output }}',\n '{{ $json.intent }}',\n '{{ $json.data_source }}',\n NOW()\n);",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        3376,
+        -736
+      ],
+      "id": "bee6e52f-1842-44ca-b26e-6bc474c8b34d",
+      "name": "Execute a SQL query2",
+      "credentials": {
+        "postgres": {
+          "id": "iUKmju52LgeNEZJa",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"output\":\"{{ $('Merge').item.json.output }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3584,
+        -736
+      ],
+      "id": "c45d262f-0017-4b76-9ee5-d34d12a89de6",
+      "name": "Edit Fields2"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"client_id\": {{ $('Code in JavaScript1').item.json.client_id }},\n  \"email\": {{ $('Code in JavaScript1').item.json.email }},\n  \"chatInput\": {{ $('Code in JavaScript1').item.json.chatInput }}\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1072,
+        -1056
+      ],
+      "id": "7ad688b0-f62f-48c8-b7c3-1f08e1504596",
+      "name": "prepare_RAG_Context"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"output\": \"Authentication failed. Please make sure that the right credentials are used for authentication.\n}\n\n ",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1072,
+        -48
+      ],
+      "id": "9af1b473-917a-4605-b508-4f37db0e9436",
+      "name": "Authentication_Failed_Message"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When chat message received": {
+      "main": [
+        [
+          {
+            "node": "sessions_lookup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "sessions_lookup": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "If1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If1": {
+      "main": [
+        [
+          {
+            "node": "Insert_Session",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields1": {
+      "main": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "SQL Agent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "prepare_RAG_Context",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Complaint_Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model2": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "SQL Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query in Postgres": {
+      "ai_tool": [
+        [
+          {
+            "node": "SQL Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory1": {
+      "ai_memory": [
+        [
+          {
+            "node": "SQL Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model3": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent2",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory2": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent2",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Answer questions with a vector store": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent2",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pinecone Vector Store": {
+      "ai_vectorStore": [
+        [
+          {
+            "node": "Answer questions with a vector store",
+            "type": "ai_vectorStore",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings OpenAI": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Pinecone Vector Store",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model4": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Answer questions with a vector store",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert_Session": {
+      "main": [
+        [
+          {
+            "node": "Respond_After_Authentication",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model5": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Complaint_Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory3": {
+      "ai_memory": [
+        [
+          {
+            "node": "Complaint_Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Complaint_Agent": {
+      "main": [
+        [
+          {
+            "node": "Parse_Compliant_JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse_Compliant_JSON": {
+      "main": [
+        [
+          {
+            "node": "If2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If2": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Complaint_Followup_Question",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query1": {
+      "main": [
+        [
+          {
+            "node": "Respond_To_User",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent2": {
+      "main": [
+        [
+          {
+            "node": "log_RAG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SQL Agent": {
+      "main": [
+        [
+          {
+            "node": "log_SQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "log_RAG": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond_To_User": {
+      "main": [
+        [
+          {
+            "node": "log_COMPLAINT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "log_COMPLAINT": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "log_SQL": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query2": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "prepare_RAG_Context": {
+      "main": [
+        [
+          {
+            "node": "AI Agent2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "5970429d-b31d-403a-83de-7e02f21819c2",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "f209c8a1b959d86791481c11468b8465c7e53e1214a0f730675916a8d5ce5369"
+  },
+  "id": "qTOxa9EHFp7GN0Pc",
+  "tags": [
+    {
+      "updatedAt": "2026-06-07T12:41:22.284Z",
+      "createdAt": "2026-06-07T12:41:22.284Z",
+      "id": "C9oZNBwkDtKbraFA",
+      "name": "Capstone_4"
+    }
+  ]
+}
